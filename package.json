@@ -1,0 +1,19 @@
+{
+	"name": "metus-ingest",
+	"version": "1.0.0",
+	"api_version": "1.0.0",
+	"keywords": [
+		"Protocol",
+		"Software"
+		],
+	"manufacturer": "Metus Technology",
+	"product": "Ingest",
+	"shortname": "Metus Ingest",
+	"description": "Ingest plugin for Companion",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"author": "Jeffrey Davidsz <jeffrey.davidsz@vicreo.eu>",
+	"license": "MIT"
+}
