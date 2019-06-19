@@ -1,168 +1,339 @@
-var tcp = require('../../tcp');
+var tcp           = require('../../tcp');
 var instance_skel = require('../../instance_skel');
+var actions       = require('./actions');
+var feedback      = require('./feedback');
+var instance_api  = require('./internalAPI');
+
 var debug;
 var log;
 
+/**
+ * Companion instance class for the Metus Ingets software.
+ *
+ * @extends instance_skel
+ * @since 1.1.0
+ * @author Jeffrey Davidsz <jeffrey.davidsz@vicreo.eu>
+ */
 
-function instance(system, id, config) {
-	var self = this;
+class instance extends instance_skel {
 
-	// super-constructor
-	instance_skel.apply(this, arguments);
-	self.actions(); // export actions
-	return self;
+	/**
+	* Create an instance.
+	*
+	* @param {EventEmitter} system - the brains of the operation
+	* @param {string} id - the instance ID
+	* @param {Object} config - saved user configuration parameters
+	* @since 1.1.0
+	*/
+	constructor(system, id, config) {
+		super(system, id, config);
+
+		this.stash        = [];
+		this.command      = null;
+		this.activeEncoders = [];
+		this.encoders     = [];
+		this.CHOICES_LIST = [];
+
+		Object.assign(this, {
+			...actions,
+			...feedback,
+			...instance_api
+		});
+
+		this.actions(); // export actions
+	}
+
+	/**
+	 * Setup the actions.
+	 *
+	 * @param {EventEmitter} system - the brains of the operation
+	 * @access public
+	 * @since 1.1.0
+	 */
+	actions(system) {
+
+		this.setupChoices();
+		this.setActions(this.getActions());
+	}
+
+	/**
+	 * Executes the provided action.
+	 *
+	 * @param {Object} action - the action to be executed
+	 * @access public
+	 * @since 1.0.0
+	 */
+	action(action) {
+		var cmd;
+		var opt = action.options;
+
+		switch (action.action) {
+			case 'load':
+				cmd = 'Load /"'+ opt.path + '/"';
+				break;
+
+			case 'start':
+				cmd = 'start';
+				console.log('start');
+				this.checkFeedbacks('encoder_started');
+				break;
+
+			case 'stop':
+				cmd = 'stop';
+				this.checkFeedbacks('encoder_started');
+				break;
+
+			case 'split':
+				cmd = 'split';
+				break;
+
+			case 'list':
+				cmd = 'list';
+				this.encoders = [];
+				break;
+		}
+
+		if (cmd !== undefined) {
+			if (this.socket !== undefined && this.socket.connected) {
+				debug('sending ', cmd, "to", this.config.host);
+				this.socket.send(cmd +"\x0d\x0a");
+			}
+		}
+	}
+
+	/**
+	 * Creates the configuration fields for web config.
+	 *
+	 * @returns {Array} the config fields
+	 * @access public
+	 * @since 1.1.0
+	 */
+	config_fields() {
+
+		return [
+			{
+				type: 'text',
+				id: 'info',
+				width: 12,
+				label: 'Information',
+				value: 'This will establish a connection to the Ingest'
+			},
+			{
+				type: 'textinput',
+				id: 'host',
+				label: 'IP address',
+				width: 12,
+				default: '192.168.0.115',
+				regex: this.REGEX_IP
+			},
+			{
+				type: 'textinput',
+				id: 'port',
+				label: 'port number',
+				width: 12,
+				default: '32106',
+				regex: this.REGEX_PORT
+			}
+		]
+	}
+
+	/**
+	 * Clean up the instance before it is destroyed.
+	 *
+	 * @access public
+	 * @since 1.1.0
+	 */
+	destroy() {
+		if (this.socket !== undefined) {
+			this.socket.destroy();
+		}
+
+		this.debug("destroy", this.id);
+	}
+
+	/**
+	 * Main initialization function called once the module
+	 * is OK to start doing things.
+	 *
+	 * @access public
+	 * @since 1.1.0
+	 */
+	init() {
+		debug = this.debug;
+		log = this.log;
+
+		this.initFeedbacks();
+		this.checkFeedbacks('encoder_started');
+
+		this.init_tcp();
+	}
+
+	/**
+	 * INTERNAL: use setup data to initalize the tcp socket object.
+	 *
+	 * @access protected
+	 * @since 1.0.0
+	 */
+	init_tcp() {
+		var receivebuffer = '';
+
+		if (this.socket !== undefined) {
+			this.socket.destroy();
+			delete this.socket;
+		}
+
+		if (this.config.port === undefined) {
+			this.config.port = 32106;
+		}
+
+		if (this.config.host) {
+			this.socket = new tcp(this.config.host, this.config.port);
+
+			this.socket.on('status_change', (status, message) => {
+				this.status(status, message);
+			});
+
+			this.socket.on('error', (err) => {
+				this.debug("Network error", err);
+				this.log('error',"Network error: " + err.message);
+			});
+
+			this.socket.on('connect', () => {
+				this.debug("Connected");
+				this.sendGetEncodersCommand();
+			});
+
+			// separate buffered stream into lines with responses
+			this.socket.on('data', (chunk) => {
+				var i = 0, line = '', offset = 0;
+				receivebuffer += chunk;
+
+				while ( (i = receivebuffer.indexOf('\n', offset)) !== -1) {
+					line = receivebuffer.substr(offset, i - offset);
+					offset = i + 1;
+					this.socket.emit('receiveline', line.toString());
+				}
+
+				receivebuffer = receivebuffer.substr(offset);
+			});
+
+			this.socket.on('receiveline', (line) => {
+				console.log('line: '+ line);
+				if (line.startsWith('Encoder')) {
+					//List of encoders
+					var encoderName = line.slice(0,10).trim();
+					this.processInformation('addEncoder', encoderName)
+				}
+
+				else if (line.match(/stopped/gi) && line.match(/OK: OK:/gi)) {
+					//stopped an encoder
+					var encoderName = line.slice(line.indexOf('Encoder') + 9,line.indexOf('has') - 2);
+					console.log('stopped: '+ encoderName);
+					this.processInformation('stopped', encoderName);
+				}
+
+				else if (line.match(/started/gi) && line.match(/OK: OK:/gi)) {
+					//started an encoder
+					var encoderName = line.slice(line.indexOf('Encoder') + 9,line.indexOf('has') - 2);
+					console.log('started: '+ encoderName);
+					this.processInformation('started', encoderName);
+				}
+
+				else {
+					this.debug("weird response from ingest", line, line.length);
+				}
+			});
+		}
+	}
+
+	/**
+	 * INTERNAL: initialize feedbacks.
+	 *
+	 * @access protected
+	 * @since 1.1.0
+	 */
+	initFeedbacks() {
+		// feedbacks
+		var feedbacks = this.getFeedbacks();
+
+		this.setFeedbackDefinitions(feedbacks);
+	}
+
+	/**
+	 * INTERNAL: Routes incoming data to the appropriate function for processing.
+	 *
+	 * @param {string} key - the command/data type being passed
+	 * @param {Object} data - the collected data
+	 * @access protected
+	 * @since 1.0.0
+	 */
+	processInformation(key,data) {
+		if (key === 'addEncoder') {
+			this.encoders.push(data);
+			console.log(this.encoders);
+			this.setupChoices();
+		} else if (key === 'started') {
+			this.activeEncoders.push(parseInt(data.slice(8).trim()));
+			console.log('ENCODERS: '+ this.activeEncoders);
+			this.checkFeedbacks('encoder_started');
+		}
+		else if (key === 'stopped') {
+			//this.activeEncoder = parseInt(data.slice(8).trim());
+			this.activeEncoders.splice(this.activeEncoders.indexOf(parseInt(data.slice(8).trim())), 1);
+			console.log('ENCODERS: '+ this.activeEncoders);
+			this.checkFeedbacks('encoder_started');
+		} else {
+			// TODO: find out more
+		}
+	}
+
+	/**
+	 * INTERNAL: use model data to define the choices for the dropdowns.
+	 *
+	 * @access protected
+	 * @since 1.1.0
+	 */
+	setupChoices() {
+
+		this.CHOICES_LIST = [];
+
+		for(var key = 0; key < this.encoders.length; key++) {
+			this.CHOICES_LIST.push( { id: key.toString() + 1, label: this.encoders[key].toString() } );
+		}
+		console.log('yo '+this.CHOICES_LIST);
+	/*	this.CHOICES_LIST  = [
+			{ label: 'Encoder 1', id: '1' },
+			{ label: 'Encoder 2', id: '2' }
+		];*/
+
+	}
+
+	/**
+	 * Process an updated configuration array.
+	 *
+	 * @param {Object} config - the new configuration
+	 * @access public
+	 * @since 1.1.0
+	 */
+	updateConfig(config) {
+		var resetConnection = false;
+
+		if (this.config.host != config.host)
+		{
+			resetConnection = true;
+		}
+
+		this.config = config;
+
+		this.actions();
+		this.initFeedbacks();
+		this.encoders = [];
+
+		if (resetConnection === true || this.socket === undefined) {
+			this.init_tcp();
+		}
+	}
+
 }
 
-instance.prototype.updateConfig = function(config) {
-	var self = this;
-	self.config = config;
-
-	if (self.tcp !== undefined) {
-		self.tcp.destroy();
-		delete self.tcp;
-	}
-	// Listener port 10001
-	if (self.config.host !== undefined) {
-		self.tcp = new tcp(self.config.host, self.config.port);
-
-		self.tcp.on('status_change', function (status, message) {
-			self.status(status, message);
-		});
-
-		self.tcp.on('error', function (message) {
-			// ignore for now
-		});
-	}
-};
-
-instance.prototype.init = function() {
-	var self = this;
-
-	debug = self.debug;
-	log = self.log;
-
-	self.status(self.STATUS_UNKNOWN);
-
-	if (self.config.host !== undefined) {
-		self.tcp = new tcp(self.config.host, self.config.port);
-
-		self.tcp.on('status_change', function (status, message) {
-			self.status(status, message);
-		});
-
-		self.tcp.on('error', function () {
-			// Ignore
-		});
-	}
-};
-
-// Return config fields for web config
-instance.prototype.config_fields = function () {
-	var self = this;
-
-	return [
-		{
-			type: 'text',
-			id: 'info',
-			width: 12,
-			label: 'Information',
-			value: 'This will establish a connection to the Ingest'
-		},
-		{
-			type: 'textinput',
-			id: 'host',
-			label: 'IP address',
-			width: 12,
-			default: '192.168.0.115',
-			regex: self.REGEX_IP
-		},
-		{
-			type: 'textinput',
-			id: 'port',
-			label: 'port number',
-			width: 12,
-			default: '32106',
-			regex: self.REGEX_PORT
-		}
-	]
-};
-
-// When module gets deleted
-instance.prototype.destroy = function() {
-	var self = this;
-
-		if (self.tcp !== undefined) {
-			self.tcp.destroy();
-		}
-		debug("destroy", self.id);
-};
-
-instance.prototype.actions = function(system) {
-	var self = this;
-	var actions = {
-		'load': {
-			label: 'Load project',
-			options: [{
-					type: 'textinput',
-					label: 'path to project',
-					id: 'path'
-			}]
-		},
-		'start': {
-			label: 'Start all encoders'
-		},
-		'stop': {
-			label: 'Stop all encoders'
-		},
-		'split': {
-			label: 'Split all encoders'
-		}/*,
-		'list': {
-			label: 'Show all encoders'
-		}*/
-	};
-
-	self.setActions(actions);
-}
-
-instance.prototype.action = function(action) {
-
-	var self = this;
-	var id = action.action;
-	var opt = action.options;
-	var cmd;
-
-	switch (id) {
-		case 'load':
-			cmd = 'Load /"'+ opt.path + '/"';
-			break;
-
-		case 'start':
-			cmd = 'start';
-			break;
-
-		case 'stop':
-			cmd = 'stop';
-			break;
-
-		case 'split':
-			cmd = 'split';
-			break;
-
-		case 'list':
-			cmd = 'list';
-			break;
-
-	}
-
-	if (cmd !== undefined) {
-		if (self.tcp !== undefined) {
-			debug('sending ', cmd, "to", self.tcp.host);
-			console.log("Send: "+cmd);
-			self.tcp.send(cmd +"\x0d\x0a");
-		}
-	}
-};
-
-instance_skel.extendedBy(instance);
 exports = module.exports = instance;
