@@ -10,8 +10,9 @@ module.exports = {
 	 */
 
 	sendGetEncodersCommand() {
+		this.encoders = [];
 		if (this.socket !== undefined && this.socket.connected) {
-			console.log('sending list'+ this.config.host);
+			console.log('sending request to '+ this.config.host);
 			this.socket.send("list\x0d\x0a");
 		}
 	}

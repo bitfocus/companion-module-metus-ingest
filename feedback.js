@@ -37,7 +37,7 @@ module.exports = {
 					}
 				],
 				callback: (feedback, bank) => {
-					if (this.activeEncoders.includes(parseInt(feedback.options.encoder))) {
+					if (this.activeEncoders.includes(feedback.options.encoder.toString())) {
 						return {
 							color: feedback.options.fg,
 							bgcolor: feedback.options.bg

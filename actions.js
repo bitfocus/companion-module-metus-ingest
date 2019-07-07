@@ -20,13 +20,23 @@ module.exports = {
 			 }]
 		};
 
-		actions['start'] = { label: 'Start all encoders' };
+		actions['start']= {
+			label: 'Start encoder',
+			options: [{
+					type: 'dropdown',
+					label: 'choose encoder',
+					id: 'encoderID',
+					choices: this.CHOICES_LIST
+			 }]
+		};
+
+		actions['start_all'] = { label: 'Start all encoders' };
 
 		actions['stop'] = { label: 'Stop all encoders' };
 
 		actions['split'] = { label: 'Split all encoders' };
 
-		actions['list'] = { label: 'Show all encoders' };
+		//actions['list'] = { label: 'Show all encoders' };
 
 		return actions;
 	}

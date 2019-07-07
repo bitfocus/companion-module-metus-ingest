@@ -51,8 +51,6 @@ class instance extends instance_skel {
 	 * @since 1.1.0
 	 */
 	actions(system) {
-
-		this.setupChoices();
 		this.setActions(this.getActions());
 	}
 
@@ -73,14 +71,15 @@ class instance extends instance_skel {
 				break;
 
 			case 'start':
+				cmd = "start \"Encoder " + opt.encoderID + "\"";
+				break;
+
+			case 'start_all':
 				cmd = 'start';
-				console.log('start');
-				this.checkFeedbacks('encoder_started');
 				break;
 
 			case 'stop':
 				cmd = 'stop';
-				this.checkFeedbacks('encoder_started');
 				break;
 
 			case 'split':
@@ -95,7 +94,7 @@ class instance extends instance_skel {
 
 		if (cmd !== undefined) {
 			if (this.socket !== undefined && this.socket.connected) {
-				debug('sending ', cmd, "to", this.config.host);
+				debug('sending ', cmd, "to ", this.config.host);
 				this.socket.send(cmd +"\x0d\x0a");
 			}
 		}
@@ -148,7 +147,7 @@ class instance extends instance_skel {
 			this.socket.destroy();
 		}
 
-		this.debug("destroy", this.id);
+		debug("destroy", this.id);
 	}
 
 	/**
@@ -200,6 +199,7 @@ class instance extends instance_skel {
 
 			this.socket.on('connect', () => {
 				this.debug("Connected");
+				//Whem we have connection get all encoders
 				this.sendGetEncodersCommand();
 			});
 
@@ -213,12 +213,11 @@ class instance extends instance_skel {
 					offset = i + 1;
 					this.socket.emit('receiveline', line.toString());
 				}
-
 				receivebuffer = receivebuffer.substr(offset);
 			});
 
 			this.socket.on('receiveline', (line) => {
-				console.log('line: '+ line);
+				//console.log('line: '+ line);
 				if (line.startsWith('Encoder')) {
 					//List of encoders
 					var encoderName = line.slice(0,10).trim();
@@ -228,14 +227,12 @@ class instance extends instance_skel {
 				else if (line.match(/stopped/gi) && line.match(/OK: OK:/gi)) {
 					//stopped an encoder
 					var encoderName = line.slice(line.indexOf('Encoder') + 9,line.indexOf('has') - 2);
-					console.log('stopped: '+ encoderName);
 					this.processInformation('stopped', encoderName);
 				}
 
-				else if (line.match(/started/gi) && line.match(/OK: OK:/gi)) {
+				else if (line.match(/started/gi) && line.match(/OK:/gi)) {
 					//started an encoder
 					var encoderName = line.slice(line.indexOf('Encoder') + 9,line.indexOf('has') - 2);
-					console.log('started: '+ encoderName);
 					this.processInformation('started', encoderName);
 				}
 
@@ -243,6 +240,7 @@ class instance extends instance_skel {
 					this.debug("weird response from ingest", line, line.length);
 				}
 			});
+
 		}
 	}
 
@@ -270,21 +268,21 @@ class instance extends instance_skel {
 	processInformation(key,data) {
 		if (key === 'addEncoder') {
 			this.encoders.push(data);
-			console.log(this.encoders);
-			this.setupChoices();
 		} else if (key === 'started') {
-			this.activeEncoders.push(parseInt(data.slice(8).trim()));
-			console.log('ENCODERS: '+ this.activeEncoders);
+			this.activeEncoders.push(data.slice(8).trim());
 			this.checkFeedbacks('encoder_started');
 		}
 		else if (key === 'stopped') {
 			//this.activeEncoder = parseInt(data.slice(8).trim());
 			this.activeEncoders.splice(this.activeEncoders.indexOf(parseInt(data.slice(8).trim())), 1);
-			console.log('ENCODERS: '+ this.activeEncoders);
 			this.checkFeedbacks('encoder_started');
 		} else {
 			// TODO: find out more
 		}
+		// after data proccesed
+		this.setupChoices();
+		this.actions();
+		this.initFeedbacks();
 	}
 
 	/**
@@ -298,13 +296,8 @@ class instance extends instance_skel {
 		this.CHOICES_LIST = [];
 
 		for(var key = 0; key < this.encoders.length; key++) {
-			this.CHOICES_LIST.push( { id: key.toString() + 1, label: this.encoders[key].toString() } );
+			this.CHOICES_LIST.push( { id: key+1, label: this.encoders[key].toString() } );
 		}
-		console.log('yo '+this.CHOICES_LIST);
-	/*	this.CHOICES_LIST  = [
-			{ label: 'Encoder 1', id: '1' },
-			{ label: 'Encoder 2', id: '2' }
-		];*/
 
 	}
 
