@@ -74,11 +74,15 @@ class instance extends instance_skel {
 				cmd = "start \"Encoder " + opt.encoderID + "\"";
 				break;
 
+			case 'stop':
+				cmd = "stop \"Encoder " + opt.encoderID + "\"";
+				break;
+
 			case 'start_all':
 				cmd = 'start';
 				break;
 
-			case 'stop':
+			case 'stop_all':
 				cmd = 'stop';
 				break;
 

@@ -17,7 +17,7 @@ module.exports = {
 					type: 'textinput',
 					label: 'path to project',
 					id: 'path'
-			 }]
+			}]
 		};
 
 		actions['start']= {
@@ -27,12 +27,22 @@ module.exports = {
 					label: 'choose encoder',
 					id: 'encoderID',
 					choices: this.CHOICES_LIST
-			 }]
+			}]
+		};
+
+		actions['stop']= {
+			label: 'Stop encoder',
+			options: [{
+					type: 'dropdown',
+					label: 'choose encoder',
+					id: 'encoderID',
+					choices: this.CHOICES_LIST
+			}]
 		};
 
 		actions['start_all'] = { label: 'Start all encoders' };
 
-		actions['stop'] = { label: 'Stop all encoders' };
+		actions['stop_all'] = { label: 'Stop all encoders' };
 
 		actions['split'] = { label: 'Split all encoders' };
 
