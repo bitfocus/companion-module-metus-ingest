@@ -5,7 +5,7 @@
 	"keywords": [
 		"Protocol",
 		"Software"
-		],
+	],
 	"manufacturer": "Metus Technology",
 	"product": "Ingest",
 	"shortname": "Metus Ingest",
@@ -15,5 +15,13 @@
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
 	"author": "Jeffrey Davidsz <jeffrey.davidsz@vicreo.eu>",
-	"license": "MIT"
+	"license": "MIT",
+	"homepage": "https://github.com/bitfocus/companion-module-metus-ingest#readme",
+	"bugs": {
+		"url": "https://github.com/bitfocus/companion-module-metus-ingest/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bitfocus/companion-module-metus-ingest.git"
+	}
 }
